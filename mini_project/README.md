@@ -116,9 +116,18 @@ The project is graded based on the following perspectives. Performance is define
    * in your local environment with predefined maps (20 pts)
    * on the evaluation server with hidden maps (20 pts)
 2. Performance of the trained agent in the tournament (40 pts)
-	* Beat the easy/medium/hard agent (with win rate `b1`/`b2`/`b3`) uploaded by the TA to get 10/20/30 pts.
-	* For win rate r, $$ \text{performance score}(r) = \begin{cases} 10 \cdot \dfrac{r}{b_{1}} & 0 < r \leq b_{1} \\ 10 + 10 \cdot \dfrac{r - b_{1}}{b_{2} - b_{1}} & b_{1} < r \leq b_{2} \\ 20 + 10 \cdot \dfrac{r - b_{2}}{b_{3} - b_{2}} & b_{2} < r \leq b_{3} \\ 30 + 10 \cdot \dfrac{r - b_{3}}{r_{\max} - b_{3}} & b_{3} < r \leq r_{\max}  \end{cases} $$ . 
-	* $$r_{\max}$$ is the max win rate on the leaderboard.
+   * Beat the easy/medium/hard agent (with win rate `b1 b2 b3`) uploaded by the TA to get 10/20/30 pts.
+   * For win rate $r$, and $r_{\max}$ is the max win rate on the leaderboard:
+
+$$
+\text{performance score}(r) = \begin{cases} 
+10 \cdot \dfrac{r}{b_{1}} & 0 < r \leq b_{1} \\
+10 + 10 \cdot \dfrac{r - b_{1}}{b_{2} - b_{1}} & b_{1} < r \leq b_{2} \\
+20 + 10 \cdot \dfrac{r - b_{2}}{b_{3} - b_{2}} & b_{2} < r \leq b_{3} \\
+30 + 10 \cdot \dfrac{r - b_{3}}{r_{\max} - b_{3}} & b_{3} < r \leq r_{\max}
+\end{cases}
+$$
+
 3. Report (20 pts)
 	* A well-documented analysis of different training strategies, hyperparameters, or architectural choices and their
 		impact on performance.
