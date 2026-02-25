@@ -21,6 +21,7 @@ You are free to choose **any RL algorithm or codebase** to train your agent.
 
 ## Changelog
 
+- **`[Feb. 24, 2026]`** Fix the route completion error in the evaluation server. Update the eval_local.py to consistent metrics with evaluation server.
 - **`[Feb. 17, 2026]`** The evaluation server is up at [http://bolei-gpu03.cs.ucla.edu:8000/](http://bolei-gpu03.cs.ucla.edu:8000/). Submit your agents now!
 
 ## **Steps to Complete the Project**

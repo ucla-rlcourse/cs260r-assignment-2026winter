@@ -94,7 +94,14 @@ def evaluate_single(agent_dir, num_episodes=5, num_agents=4,
         },
     })
     ego_id = "agent0"
-    all_metrics = []
+    results = {
+        "rewards": [],
+        "route_completions": [],
+        "speeds": [],
+        "win_count": 0,
+        "lose_count": 0,
+        "arrive_count": 0,
+    }
     bev_size = None
 
     for ep in range(num_episodes):
@@ -102,7 +109,10 @@ def evaluate_single(agent_dir, num_episodes=5, num_agents=4,
         if render and bev_size is None:
             bev_size = _compute_bev_size(env)
         policy.reset()
-        episode_reward = 0.0
+        ep_speeds = []
+        ep_episode_reward = 0.0
+        ep_route_completion = 0.0
+        ep_arrive = False
         steps = 0
         opponent_obs = {k: v for k, v in obs_dict.items() if k != ego_id}
         ego_done = False
@@ -120,31 +130,71 @@ def evaluate_single(agent_dir, num_episodes=5, num_agents=4,
             if render:
                 _render_bev(env, bev_size)
             opponent_obs = {k: v for k, v in obs_dict.items() if k != ego_id}
-            episode_reward += rewards.get(ego_id, 0.0)
             steps += 1
+
+            # Collect per-step metrics from info
+            ego_info = infos.get(ego_id, {})
+            ep_speeds.append(ego_info.get("speed_km_h", 0.0))
+            ep_episode_reward = ego_info.get("episode_reward", ep_episode_reward)
+            if ego_info.get("arrive_dest", False) and not ep_arrive:
+                ep_arrive = True
+
+            # Read route completion from live vehicle
+            if ego_id in env.agents:
+                try:
+                    ep_route_completion = env.agents[ego_id].navigation.route_completion
+                except Exception:
+                    pass
+
             ego_done = terms.get(ego_id, terms.get("__all__", False)) or \
                        truncs.get(ego_id, truncs.get("__all__", False))
 
-        ego_info = infos.get(ego_id, {})
-        metrics = {
-            "episode": ep,
-            "reward": episode_reward,
-            "steps": steps,
-            "route_completion": ego_info.get("route_completion", ego_info.get("progress", 0.0)),
-            "arrive_dest": ego_info.get("arrive_dest", False),
-        }
-        all_metrics.append(metrics)
-        print(f"  Ep {ep}: reward={metrics['reward']:.2f}, "
-              f"route={metrics['route_completion']:.2%}, "
-              f"arrive={metrics['arrive_dest']}")
+        avg_speed = float(np.mean(ep_speeds)) if ep_speeds else 0.0
+        results["rewards"].append(ep_episode_reward)
+        results["route_completions"].append(ep_route_completion)
+        results["speeds"].append(avg_speed)
+        if ep_arrive:
+            results["arrive_count"] += 1
+            results["win_count"] += 1
+        else:
+            results["lose_count"] += 1
+
+        print(f"  Ep {ep}: reward={ep_episode_reward:.2f}, "
+              f"route={ep_route_completion:.2%}, "
+              f"speed={avg_speed:.1f} km/h, "
+              f"arrive={ep_arrive}")
 
     env.close()
     if render:
         import cv2
         cv2.destroyAllWindows()
-    print(f"\n  Avg reward: {np.mean([m['reward'] for m in all_metrics]):.2f}")
-    print(f"  Avg route:  {np.mean([m['route_completion'] for m in all_metrics]):.2%}")
-    return all_metrics
+
+    avg_reward = float(np.mean(results["rewards"]))
+    avg_route = float(np.mean(results["route_completions"]))
+    avg_speed = float(np.mean(results["speeds"]))
+
+    print(f"\n--- Results ({num_episodes} episodes) ---")
+    print(f"  avg_reward:           {avg_reward:.2f}")
+    print(f"  avg_route_completion: {avg_route:.2%}")
+    print(f"  avg_speed:            {avg_speed:.1f} km/h")
+    print(f"  arrive_count:         {results['arrive_count']}/{num_episodes}")
+    print(f"  win_count:            {results['win_count']}")
+    print(f"  lose_count:           {results['lose_count']}")
+
+    return {
+        "avg_reward": avg_reward,
+        "avg_route_completion": avg_route,
+        "avg_speed": avg_speed,
+        "win_count": results["win_count"],
+        "lose_count": results["lose_count"],
+        "rank": 1,
+        "details": {
+            "rewards": [float(x) for x in results["rewards"]],
+            "route_completions": [float(x) for x in results["route_completions"]],
+            "speeds": [float(x) for x in results["speeds"]],
+            "arrive_count": results["arrive_count"],
+        },
+    }
 
 
 def evaluate_versus(agent_dirs, num_episodes=5, render=False, seed=0):
@@ -175,8 +225,17 @@ def evaluate_versus(agent_dirs, num_episodes=5, render=False, seed=0):
         },
     })
 
-    results = {aid: {"rewards": [], "route_completions": [], "wins": 0}
-               for aid in agent_ids}
+    results = {
+        aid: {
+            "rewards": [],
+            "route_completions": [],
+            "speeds": [],
+            "win_count": 0,
+            "lose_count": 0,
+            "arrive_count": 0,
+        }
+        for aid in agent_ids
+    }
     bev_size = None
 
     for ep in range(num_episodes):
@@ -186,8 +245,11 @@ def evaluate_versus(agent_dirs, num_episodes=5, render=False, seed=0):
         for p in policies.values():
             p.reset()
 
-        ep_rewards = {aid: 0.0 for aid in agent_ids}
-        arrive_step = {}  # aid -> step when agent first arrived
+        ep_speeds = {aid: [] for aid in agent_ids}
+        ep_episode_rewards = {aid: 0.0 for aid in agent_ids}
+        ep_route_completions = {aid: 0.0 for aid in agent_ids}
+        ep_arrive = {aid: False for aid in agent_ids}
+        ep_arrive_step = {aid: None for aid in agent_ids}
         step = 0
         done_all = False
 
@@ -197,57 +259,115 @@ def evaluate_versus(agent_dirs, num_episodes=5, render=False, seed=0):
                 if aid in policies and aid in obs_dict:
                     actions[aid] = policies[aid](obs_dict[aid])
                 else:
-                    actions[aid] = np.array([0.0, 1.0], dtype=np.float32)
+                    actions[aid] = np.array([0.0, 0.0], dtype=np.float32)
 
             obs_dict, rewards, terms, truncs, infos = env.step(actions)
             if render:
                 _render_bev(env, bev_size)
             step += 1
+
+            # Collect per-step metrics from info
             for aid in agent_ids:
-                ep_rewards[aid] += rewards.get(aid, 0.0)
-                if aid not in arrive_step and infos.get(aid, {}).get("arrive_dest", False):
-                    arrive_step[aid] = step
+                if aid in infos:
+                    info = infos[aid]
+                    ep_speeds[aid].append(info.get("speed_km_h", 0.0))
+                    ep_episode_rewards[aid] = info.get(
+                        "episode_reward", ep_episode_rewards[aid]
+                    )
+                    if info.get("arrive_dest", False) and not ep_arrive[aid]:
+                        ep_arrive[aid] = True
+                        ep_arrive_step[aid] = step
+
+            # Read route completion from live vehicles
+            for aid in agent_ids:
+                if aid in env.agents:
+                    try:
+                        ep_route_completions[aid] = env.agents[aid].navigation.route_completion
+                    except Exception:
+                        pass
 
             done_all = terms.get("__all__", False) or truncs.get("__all__", False)
 
-        # Record results
-        ep_routes = {}
+        # Record episode results
         for aid in agent_ids:
-            info = infos.get(aid, {})
-            rc = info.get("route_completion", info.get("progress", 0.0))
-            results[aid]["rewards"].append(ep_rewards[aid])
-            results[aid]["route_completions"].append(rc)
-            ep_routes[aid] = rc
+            avg_speed = float(np.mean(ep_speeds[aid])) if ep_speeds[aid] else 0.0
+            results[aid]["rewards"].append(ep_episode_rewards[aid])
+            results[aid]["route_completions"].append(ep_route_completions[aid])
+            results[aid]["speeds"].append(avg_speed)
+            if ep_arrive[aid]:
+                results[aid]["arrive_count"] += 1
 
-        # Winner = first to arrive; if nobody arrived, highest route completion
-        if arrive_step:
-            winner = min(arrive_step, key=arrive_step.get)
+        # Determine episode winner: first to arrive wins; ties = all win;
+        # nobody arrives = all lose
+        arrived_slots = [aid for aid in agent_ids if ep_arrive[aid]]
+        if arrived_slots:
+            min_step = min(ep_arrive_step[aid] for aid in arrived_slots)
+            winners = [aid for aid in arrived_slots if ep_arrive_step[aid] == min_step]
+            losers = [aid for aid in agent_ids if aid not in winners]
+            for aid in winners:
+                results[aid]["win_count"] += 1
+            for aid in losers:
+                results[aid]["lose_count"] += 1
         else:
-            winner = max(ep_routes, key=ep_routes.get)
-        results[winner]["wins"] += 1
+            for aid in agent_ids:
+                results[aid]["lose_count"] += 1
 
         status_parts = []
         for aid in agent_ids:
-            s = f"{aid}: route={ep_routes[aid]:.2%}"
-            if aid in arrive_step:
-                s += f" (arrived@step {arrive_step[aid]})"
+            s = f"{aid}: route={ep_route_completions[aid]:.2%}, speed={results[aid]['speeds'][-1]:.1f} km/h"
+            if ep_arrive[aid]:
+                s += f" (arrived@step {ep_arrive_step[aid]})"
             status_parts.append(s)
-        print(f"  Ep {ep}: winner={winner} | " + " | ".join(status_parts))
+        winner_str = ", ".join(winners) if arrived_slots else "none"
+        print(f"  Ep {ep}: winner={winner_str} | " + " | ".join(status_parts))
 
     env.close()
     if render:
         import cv2
         cv2.destroyAllWindows()
 
-    print(f"\n--- Race Results ({num_episodes} episodes) ---")
-    for i, aid in enumerate(agent_ids):
-        r = results[aid]
-        print(f"  {aid} ({os.path.basename(agent_dirs[i])}): "
-              f"wins={r['wins']}, "
-              f"avg_reward={np.mean(r['rewards']):.2f}, "
-              f"avg_route={np.mean(r['route_completions']):.2%}")
+    # Rank by win_count (desc), then avg_reward (desc) as tiebreaker
+    avg_rewards = {aid: float(np.mean(results[aid]["rewards"])) for aid in agent_ids}
+    ranked = sorted(
+        agent_ids,
+        key=lambda s: (results[s]["win_count"], avg_rewards[s]),
+        reverse=True,
+    )
 
-    return results
+    print(f"\n--- Race Results ({num_episodes} episodes) ---")
+    formatted = []
+    for rank_idx, aid in enumerate(ranked):
+        r = results[aid]
+        dir_idx = agent_ids.index(aid)
+        avg_reward = float(np.mean(r["rewards"]))
+        avg_route = float(np.mean(r["route_completions"]))
+        avg_speed = float(np.mean(r["speeds"]))
+
+        print(f"  #{rank_idx+1} {aid} ({os.path.basename(agent_dirs[dir_idx])}): "
+              f"wins={r['win_count']}, losses={r['lose_count']}, "
+              f"avg_reward={avg_reward:.2f}, "
+              f"avg_route={avg_route:.2%}, "
+              f"avg_speed={avg_speed:.1f} km/h, "
+              f"arrive={r['arrive_count']}/{num_episodes}")
+
+        formatted.append({
+            "agent_dir": agent_dirs[dir_idx],
+            "agent_slot": aid,
+            "avg_reward": avg_reward,
+            "avg_route_completion": avg_route,
+            "avg_speed": avg_speed,
+            "win_count": r["win_count"],
+            "lose_count": r["lose_count"],
+            "rank": rank_idx + 1,
+            "details": {
+                "rewards": [float(x) for x in r["rewards"]],
+                "route_completions": [float(x) for x in r["route_completions"]],
+                "speeds": [float(x) for x in r["speeds"]],
+                "arrive_count": r["arrive_count"],
+            },
+        })
+
+    return formatted
 
 
 def main():
