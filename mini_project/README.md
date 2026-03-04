@@ -21,6 +21,7 @@ You are free to choose **any RL algorithm or codebase** to train your agent.
 
 ## Changelog
 
+- **`[March 4, 2026]`** The baseline agent is released under [agents/baseline_agent](agents/baseline_agent/). Feel free to compete with it and use it for training. 
 - **`[Feb. 24, 2026]`** Fix the route completion error in the evaluation server. Update the eval_local.py to consistent metrics with evaluation server.
 - **`[Feb. 17, 2026]`** The evaluation server is up at [http://bolei-gpu03.cs.ucla.edu:8000/](http://bolei-gpu03.cs.ucla.edu:8000/). Submit your agents now!
 
@@ -96,6 +97,7 @@ Follow the tutorial video to submit your agent and race with others at http://bo
 Your submission must contain:
 
 1. **Your trained RL agent** (The agent zip file)
+
    - Place your agent in a subfolder under `agents/`.
    - Zip this subfolder, so that after unzip we get a FOLDER instead of files.
    - Upload it to BruinLearn assignment submission box with name "agent zip file".
@@ -117,6 +119,7 @@ The project is graded based on the following perspectives. Performance is define
    * in your local environment with predefined maps (20 pts)
    * on the evaluation server with hidden maps (20 pts)
 2. Performance of the trained agent in the tournament (40 pts)
+
    * Beat the easy/medium/hard agent (with win rate `b1 b2 b3`) uploaded by the TA to get 10/20/30 pts.
    * For win rate $r$, and $r_{\max}$ is the max win rate on the leaderboard:
 
@@ -130,12 +133,12 @@ $$
 $$
 
 3. Report (20 pts)
-	* A well-documented analysis of different training strategies, hyperparameters, or architectural choices and their
-		impact on performance.
-	* You don't need to get the best agent in order to earn this. We want to see your insights and lessons learned from
-		experimenting with different setups.
+   * A well-documented analysis of different training strategies, hyperparameters, or architectural choices and their
+     impact on performance.
+   * You don't need to get the best agent in order to earn this. We want to see your insights and lessons learned from
+     experimenting with different setups.
 4. Bonus (up to 20 pts)
-	* Top 5/10/20 agents get an additional 20/10/5 bonus pts.
+   * Top 5/10/20 agents get an additional 20/10/5 bonus pts.
 
 ## Local Verification
 
